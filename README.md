@@ -1,8 +1,8 @@
 # HookTunnel CLI
 
-**Stop losing webhooks. Start shipping faster.**
+**Webhook infrastructure that never drops a request.**
 
-Forward webhooks from Stripe, Twilio, GitHub, and any provider directly to your localhost. No more broken tunnels, changing URLs, or missed events.
+Webhooks are the weakest link in every platform integration. HookTunnel fixes that — reliable ingress, full history, instant replay. For development and production.
 
 ```bash
 npx hooktunnel-cli connect dev 3000
@@ -12,41 +12,127 @@ npx hooktunnel-cli connect dev 3000
 
 ## The Problem
 
-You're building a payment flow. Stripe sends webhooks. But your local machine isn't on the internet.
+Webhooks are fire-and-forget. When they fail, you're blind.
 
-**Traditional solutions fail you:**
+```
+Provider ──────────────────────────────────▶ Your Server
+              If down, webhook lost forever       💀
+```
 
-| Approach | Problem |
-|----------|---------|
-| **ngrok** | URL changes every restart. You update Stripe, forget, webhooks go nowhere. |
-| **localtunnel** | Unstable. Random disconnects. No history. |
-| **Cloudflare Tunnel** | Complex setup. Overkill for development. |
-| **RequestBin** | View-only. Can't forward to localhost. |
+**Every team hits these:**
 
-**You need:**
-- A stable URL that never changes
-- Real-time forwarding to localhost
-- Full request history when things break
-- One command to start working
+| Failure Mode | What Happens |
+|--------------|--------------|
+| **Server down** | Webhook gone. Stripe retries 8x, GitHub gives you 1 shot. |
+| **Handler bug** | You need the exact payload to debug. It's gone. |
+| **URL changed** | Redeployed? New infra? Webhooks silently fail. |
+| **No visibility** | Something broke. What was in that payload? Who knows. |
+| **Can't replay** | Fixed the bug, but need to wait for a real event to test. |
+
+**Traditional tools don't solve this:**
+
+| Tool | Problem |
+|------|---------|
+| **ngrok** | URL changes on restart. Dev only. No history. |
+| **localtunnel** | Unstable. No persistence. Dev only. |
+| **RequestBin** | View-only. Can't forward or replay. |
+| **Custom logging** | You built it. You maintain it. It's missing features. |
 
 ---
 
 ## The Solution
 
-HookTunnel gives you a permanent webhook URL. Configure it once in Stripe/Twilio/GitHub. Never change it again.
+HookTunnel is infrastructure between providers and your servers.
 
 ```
-https://hooks.hooktunnel.com/h/abc123def456
-         ↓
-    Your localhost:3000
+              WITHOUT                              WITH HOOKTUNNEL
+
+Provider ────────▶ Your Server        Provider ────▶ HookTunnel ────▶ Your Server
+        (if down, lost)                            (always on)      (can be down)
+                                                    ✓ Captured       ✓ Process later
+                                                    ✓ Logged         ✓ Debug anytime
+                                                    ✓ Replayable     ✓ Test fixes
+                                                    ✓ Stable URL     ✓ Redeploy freely
 ```
 
 **What you get:**
-- **Stable URLs** - Same URL forever, even across restarts
-- **Request history** - See every webhook, even when you weren't connected
-- **Instant replay** - Re-send any webhook to test your fix
-- **Smart search** - Find webhooks by meaning ("payment failed")
-- **Zero config** - One command, you're connected
+
+- **Stable URLs** — Configure once in Stripe/Twilio/GitHub. Never change again.
+- **Never lose webhooks** — Captured even when your server is down.
+- **Full history** — See every request. Search by content. Debug with context.
+- **Instant replay** — Re-send any webhook to test your fix. No waiting.
+- **Local forwarding** — Forward to localhost for development.
+
+---
+
+## Use Cases
+
+### Development: Forward to Localhost
+
+Test against real webhooks while building:
+
+```bash
+# Terminal 1: Your server
+npm run dev
+
+# Terminal 2: Forward webhooks to localhost
+hooktunnel connect dev 3000
+```
+
+Every Stripe/Twilio webhook instantly hits your local machine.
+
+### Production: Debug Incidents
+
+2am. Payments are failing. What's in those webhooks?
+
+```bash
+# See what's hitting your webhook endpoint
+hooktunnel logs abc123 --limit 50
+
+# Find the problematic request
+# Note the log ID of the 500 error
+
+# After fixing, replay to verify
+hooktunnel replay log_xyz123 --to https://your-server.com/webhook
+```
+
+### Recovery: Server Was Down
+
+Your server crashed for 10 minutes. Providers sent webhooks. They're not lost.
+
+```bash
+# See what came in while you were down
+hooktunnel logs abc123 --limit 100
+
+# Everything is there
+# Process them now, or replay to your recovered server
+```
+
+### AI-Assisted Debugging
+
+Use with Claude Code for intelligent troubleshooting:
+
+**Prompt:** *"Use hooktunnel to find recent webhook errors and explain what's wrong"*
+
+```bash
+# Claude runs:
+hooktunnel logs abc123 --limit 20
+
+# Analyzes the 500 errors
+# Explains what payload caused failure
+# Suggests fixes
+```
+
+**Prompt:** *"Replay the failed payment webhook and debug my handler"*
+
+```bash
+# Claude runs:
+hooktunnel replay log_abc123 --to http://localhost:3000
+
+# Shows the response
+# Explains the error
+# Helps you fix it
+```
 
 ---
 
@@ -56,11 +142,9 @@ https://hooks.hooktunnel.com/h/abc123def456
 
 ```bash
 # Go to hooktunnel.com
-# Click "Generate Webhook URL"
-# Copy your hook ID
+# Sign up (or sign in with GitHub)
+# Generate a webhook URL
 ```
-
-No credit card. No signup form. Just click and go.
 
 ### 2. Get Your API Key
 
@@ -81,13 +165,13 @@ npx hooktunnel-cli connect dev 3000
 
 ### 4. Configure Your Provider
 
-Paste your HookTunnel URL into Stripe/Twilio/GitHub webhook settings:
+Add your HookTunnel URL to Stripe/Twilio/GitHub webhook settings:
 
 ```
 https://hooks.hooktunnel.com/h/your-hook-id
 ```
 
-**Done.** Webhooks now forward to your localhost in real-time.
+**Done.** Webhooks flow through HookTunnel to your server.
 
 ---
 
@@ -206,8 +290,8 @@ Re-send a captured webhook.
 # Replay to connected tunnel
 hooktunnel replay log_abc123
 
-# Replay to specific URL
-hooktunnel replay log_abc123 --to http://localhost:4000/webhook
+# Replay to specific URL (including production)
+hooktunnel replay log_abc123 --to https://your-server.com/webhook
 ```
 
 ### `hooktunnel status`
@@ -228,114 +312,31 @@ hooktunnel logout
 
 ---
 
-## Use Cases
-
-### Local Development
-
-Test webhooks while building:
-
-```bash
-# Terminal 1: Your server
-npm run dev
-
-# Terminal 2: Forward webhooks
-hooktunnel connect dev 3000
-```
-
-Every Stripe/Twilio webhook instantly hits your localhost.
-
-### Debug Failed Webhooks
-
-Something broke in production. Find out what:
-
-```bash
-# See what happened
-hooktunnel logs abc123 --limit 50
-
-# Find the failed request, note the log ID
-
-# Fix your code
-
-# Replay to verify the fix
-hooktunnel replay log_xyz123
-```
-
-### AI-Assisted Debugging
-
-Use with Claude Code for intelligent troubleshooting:
-
-**Prompt:** *"Use hooktunnel to find recent webhook errors and explain what's wrong"*
-
-```bash
-# Claude runs:
-hooktunnel logs abc123 --limit 20
-
-# Analyzes the 500 errors
-# Explains what payload caused failure
-# Suggests fixes
-```
-
-**Prompt:** *"Replay the failed payment webhook and debug my handler"*
-
-```bash
-# Claude runs:
-hooktunnel replay log_abc123 --to http://localhost:3000
-
-# Shows the response
-# Explains the error
-# Helps you fix it
-```
-
-### Team Development
-
-Multiple developers, same webhook:
-
-```bash
-# Developer 1 (building the handler)
-hooktunnel connect dev 3000
-
-# Developer 2 (reviewing what's coming in)
-hooktunnel logs abc123 --limit 10
-```
-
-### CI/CD Testing
-
-Validate webhooks in your pipeline:
-
-```bash
-#!/bin/bash
-npm start &
-hooktunnel connect dev 3000 &
-sleep 5
-npm run test:webhooks
-```
-
----
-
 ## How It Works
 
 ```
 ┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
 │                 │     │                  │     │                 │
-│  Stripe/Twilio  │────▶│   HookTunnel     │────▶│   CLI Client    │
-│                 │     │   Cloud          │     │                 │
-└─────────────────┘     └──────────────────┘     └────────┬────────┘
-                                                          │
-                                                          ▼
-                                                 ┌─────────────────┐
-                                                 │                 │
-                                                 │  localhost:3000 │
-                                                 │                 │
-                                                 └─────────────────┘
+│  Stripe/Twilio  │────▶│   HookTunnel     │────▶│  Your Server    │
+│  GitHub/etc     │     │   (always on)    │     │  (or CLI)       │
+│                 │     │                  │     │                 │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                               │
+                               ▼
+                        ┌──────────────────┐
+                        │  Request History │
+                        │  • Full payloads │
+                        │  • Searchable    │
+                        │  • Replayable    │
+                        └──────────────────┘
 ```
 
 1. **Provider sends webhook** to your stable HookTunnel URL
-2. **HookTunnel receives and logs** the request (stored for 24h-30d based on plan)
-3. **CLI receives via WebSocket** in real-time
-4. **CLI forwards to localhost** and returns the response
-5. **You see the result** in your terminal
+2. **HookTunnel captures and logs** — stored even if your server is down
+3. **Request forwarded** to your server (or CLI for local dev)
+4. **Full history available** — debug, search, replay anytime
 
-The URL never changes. Your localhost gets every webhook instantly.
+The URL never changes. No webhook is ever lost.
 
 ---
 
