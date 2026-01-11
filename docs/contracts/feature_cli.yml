@@ -1,0 +1,171 @@
+# HookTunnel CLI Contracts
+# Specflow contract defining CLI behavior
+
+feature: hooktunnel-cli
+version: 1.0.0
+description: Command-line interface for HookTunnel webhook forwarding
+
+requirements:
+  # Authentication
+  CLI-AUTH-001:
+    level: MUST
+    description: CLI must support API key authentication
+    enforcement:
+      - Config stores API key securely
+      - Key validated on first command
+    rationale: Secure access to user's hooks
+
+  CLI-AUTH-002:
+    level: MUST
+    description: CLI must persist auth between sessions
+    enforcement:
+      - Store credentials in user config directory
+      - Support logout to clear credentials
+    rationale: Avoid re-authentication on every command
+
+  # Connection
+  CLI-CONN-001:
+    level: MUST
+    description: CLI must connect to WebSocket tunnel gateway
+    enforcement:
+      - Connect to wss://tunnel.hooktunnel.com/ws/tunnel
+      - Send hello message with capabilities
+      - Handle hello_ack response
+    rationale: Core tunneling functionality
+
+  CLI-CONN-002:
+    level: MUST
+    description: CLI must forward requests to local server
+    enforcement:
+      - Forward all received requests to localhost:PORT
+      - Send response back through tunnel
+      - Handle connection errors gracefully
+    rationale: Primary use case for development
+
+  CLI-CONN-003:
+    level: MUST
+    description: CLI must handle heartbeat/ping
+    enforcement:
+      - Respond to ping with pong
+      - Detect stale connections
+      - Auto-reconnect on disconnect
+    rationale: Maintain stable connection
+
+  CLI-CONN-004:
+    level: SHOULD
+    description: CLI should show real-time request log
+    enforcement:
+      - Display method, path, status, time for each request
+      - Color-code by status (green=2xx, red=4xx/5xx)
+    rationale: Developer visibility
+
+  # Commands
+  CLI-CMD-001:
+    level: MUST
+    description: CLI must provide connect command
+    enforcement:
+      - Syntax: hooktunnel connect <env> <port>
+      - Validate port is number
+      - Support --verbose flag
+    rationale: Primary tunneling command
+
+  CLI-CMD-002:
+    level: MUST
+    description: CLI must provide login command
+    enforcement:
+      - Syntax: hooktunnel login
+      - Accept --key flag for API key
+      - Validate key against API
+    rationale: Authentication flow
+
+  CLI-CMD-003:
+    level: MUST
+    description: CLI must provide hooks command
+    enforcement:
+      - Syntax: hooktunnel hooks
+      - List all user hooks with ID and status
+    rationale: Hook discovery
+
+  CLI-CMD-004:
+    level: MUST
+    description: CLI must provide logs command
+    enforcement:
+      - Syntax: hooktunnel logs <hookId>
+      - Support --limit flag (default 20)
+      - Display in table format
+    rationale: Log inspection
+
+  CLI-CMD-005:
+    level: SHOULD
+    description: CLI should provide replay command
+    enforcement:
+      - Syntax: hooktunnel replay <logId>
+      - Require Pro tier
+      - Support --to flag for target URL
+    rationale: Request replay from CLI
+
+  CLI-CMD-006:
+    level: MUST
+    description: CLI must provide status command
+    enforcement:
+      - Syntax: hooktunnel status
+      - Show connection state, hook info
+    rationale: Troubleshooting
+
+  CLI-CMD-007:
+    level: MUST
+    description: CLI must provide logout command
+    enforcement:
+      - Syntax: hooktunnel logout
+      - Clear stored credentials
+    rationale: Security
+
+  # Error Handling
+  CLI-ERR-001:
+    level: MUST
+    description: CLI must show helpful error messages
+    enforcement:
+      - Include error code and description
+      - Suggest fix when possible
+    rationale: Developer experience
+
+  CLI-ERR-002:
+    level: MUST
+    description: CLI must handle network failures gracefully
+    enforcement:
+      - Retry connection with backoff
+      - Show connection status
+      - Exit cleanly on Ctrl+C
+    rationale: Reliability
+
+journeys:
+  J-CLI-FIRST-USE:
+    description: First-time user flow
+    steps:
+      - Install with npx hooktunnel or npm i -g hooktunnel-cli
+      - Run hooktunnel login --key <api-key>
+      - Run hooktunnel connect dev 3000
+      - Webhooks forward to localhost:3000
+
+  J-CLI-DEBUG:
+    description: Debug a failed webhook
+    steps:
+      - Run hooktunnel logs <hookId> to find failed request
+      - Note the log ID
+      - Run hooktunnel replay <logId> --to localhost:3000
+      - Fix code based on result
+
+definition_of_done:
+  critical:
+    - J-CLI-FIRST-USE
+    - CLI-AUTH-001
+    - CLI-CONN-001
+    - CLI-CONN-002
+    - CLI-CMD-001
+    - CLI-CMD-002
+
+changelog:
+  - date: 2026-01-11
+    version: "1.0.0"
+    changes:
+      - Initial CLI contract
