@@ -1,7 +1,7 @@
 {
   "name": "hooktunnel-cli",
-  "version": "0.1.0",
-  "description": "CLI for HookTunnel - Forward webhooks to localhost",
+  "version": "0.1.1",
+  "description": "HookTunnel CLI - Webhook infrastructure that never drops a request",
   "type": "module",
   "bin": {
     "hooktunnel": "./dist/index.js"

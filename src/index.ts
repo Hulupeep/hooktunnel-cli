@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * HookTunnel CLI
- * Forward webhooks to localhost
+ * Webhook infrastructure - never lose a request
  */
 
 import { Command } from 'commander';
@@ -19,8 +19,8 @@ const program = new Command();
 
 program
   .name('hooktunnel')
-  .description('Forward webhooks to localhost for development')
-  .version('0.1.0');
+  .description('Webhook infrastructure - stable URLs, full history, instant replay')
+  .version('0.1.1');
 
 // Login command
 program
@@ -50,7 +50,7 @@ program
 // Connect command
 program
   .command('connect <env> <port>')
-  .description('Connect tunnel and forward webhooks to localhost')
+  .description('Forward live webhooks to your local server')
   .option('-v, --verbose', 'Show verbose output')
   .option('-h, --host <host>', 'Local host to forward to (default: localhost)')
   .action(async (env, port, options) => {
@@ -116,7 +116,13 @@ program.action(() => {
   console.log(chalk.cyan(`
   🔗 HookTunnel CLI
 
-  Forward webhooks to localhost for development.
+  Webhook infrastructure that never drops a request.
+  Stable URLs, full history, instant replay.
+
+  Get started:
+    hooktunnel login --key <your-api-key>
+    hooktunnel hooks
+    hooktunnel connect dev 3000
   `));
   program.help();
 });
