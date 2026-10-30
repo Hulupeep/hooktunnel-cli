@@ -8,6 +8,7 @@ import ora from 'ora';
 import { isAuthenticated } from '../lib/config.js';
 import { fetchLogs } from '../lib/api.js';
 import { CLIError } from '../lib/errors.js';
+import { cliCommand } from '../lib/invocation.js';
 
 interface LogsOptions {
   limit?: string;
@@ -77,7 +78,7 @@ export async function logsCommand(hookId: string, options: LogsOptions): Promise
 
     console.log();
     console.log(chalk.gray(`  Log ID (for replay): ${logs[0]?.id || 'N/A'}`));
-    console.log(chalk.gray('  To replay: hooktunnel replay <logId>\n'));
+    console.log(chalk.gray(`  To replay: ${cliCommand('replay <logId>')}\n`));
   } catch (error) {
     spinner.fail('Failed to fetch logs');
     throw error;

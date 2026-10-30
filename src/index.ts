@@ -14,18 +14,19 @@ import { hooksCommand } from './commands/hooks.js';
 import { logsCommand } from './commands/logs.js';
 import { replayCommand } from './commands/replay.js';
 import { statusCommand } from './commands/status.js';
+import { cliCommand, cliPrefix } from './lib/invocation.js';
 
 const program = new Command();
 
 program
-  .name('hooktunnel')
+  .name(cliPrefix())
   .description('Webhook infrastructure, not just a tunnel. Captures every request, replay anywhere.')
   .version('0.1.3');
 
 // Login command
 program
   .command('login')
-  .description('Authenticate with HookTunnel')
+  .description('Authenticate with HookTunnel (prompts for the key if --key is omitted)')
   .option('-k, --key <apiKey>', 'API key for authentication')
   .action(async (options) => {
     try {
@@ -122,9 +123,9 @@ program.action(() => {
   24/7, stores full history, and lets you replay to localhost OR production.
 
   Get started:
-    hooktunnel login --key <your-api-key>
-    hooktunnel hooks
-    hooktunnel connect dev 3000
+    ${cliCommand('login --key <your-api-key>')}
+    ${cliCommand('hooks')}
+    ${cliCommand('connect dev 3000')}
 
   Why HookTunnel?
     - Never lose a webhook: Captured even when you're offline
