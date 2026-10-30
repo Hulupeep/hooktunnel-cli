@@ -86,6 +86,10 @@ export interface TunnelOptions {
   host?: string;
   verbose?: boolean;
   apiKey: string;
+  /** Override the configured tunnel URL (tests, self-hosting). */
+  tunnelUrl?: string;
+  /** Override initial-connect retry delays for 503 responses (tests). */
+  retryDelaysMs?: number[];
 }
 
 // Request log for display

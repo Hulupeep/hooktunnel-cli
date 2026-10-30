@@ -68,7 +68,7 @@ export async function connectCommand(
   process.on('SIGTERM', shutdown);
 
   try {
-    await client.connect();
+    await client.connectWithRetry();
     console.log(chalk.gray('Waiting for webhooks... (Ctrl+C to stop)\n'));
 
     // Keep the process alive
