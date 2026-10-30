@@ -24,7 +24,7 @@ import type {
   RequestLogEntry,
 } from '../types/tunnel.js';
 
-const CLIENT_VERSION = '0.1.3';
+const CLIENT_VERSION = '0.1.4';
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 30000];
 // Default tunnel endpoint: wss://tunnel.hooktunnel.com/ws/tunnel
 const HANDSHAKE_TIMEOUT_MS = 15_000;

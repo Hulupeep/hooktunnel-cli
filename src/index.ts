@@ -21,7 +21,7 @@ const program = new Command();
 program
   .name(cliPrefix())
   .description('Webhook infrastructure, not just a tunnel. Captures every request, replay anywhere.')
-  .version('0.1.3');
+  .version('0.1.4');
 
 // Login command
 program
