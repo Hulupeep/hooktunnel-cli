@@ -2,7 +2,7 @@
 # Specflow contract defining CLI behavior
 
 feature: hooktunnel-cli
-version: 1.0.0
+version: 1.1.0
 description: Command-line interface for HookTunnel webhook forwarding
 
 requirements:
@@ -22,6 +22,19 @@ requirements:
       - Store credentials in user config directory
       - Support logout to clear credentials
     rationale: Avoid re-authentication on every command
+
+  CLI-AUTH-003:
+    level: MUST
+    description: Login verifies the key against the control plane and never hard-blocks on server availability
+    enforcement:
+      - Default apiUrl is https://app.hooktunnel.com (control plane); stored configs equal to the old default https://api.hooktunnel.com are migrated, custom URLs are kept
+      - login calls GET /api/keys/whoami with Authorization Bearer <key>
+      - 200 valid -> save key and show scopes
+      - 401 -> do not save; show the specific reason (INVALID_TOKEN, TOKEN_REVOKED, TOKEN_EXPIRED, MISSING_TOKEN)
+      - 404, 5xx or network error -> save key with a warning that it could not be verified
+      - login without --key prompts with hidden input on a TTY; errors clearly when not a TTY
+      - The full API key is never printed
+    rationale: Hulupeep/hooktunnel#59 - login always failed against a service-only endpoint on the data-plane host
 
   # Connection
   CLI-CONN-001:
@@ -138,12 +151,32 @@ requirements:
       - Exit cleanly on Ctrl+C
     rationale: Reliability
 
+  CLI-ERR-003:
+    level: MUST
+    description: Auth failures are reported specifically and never blamed on the network
+    enforcement:
+      - Tunnel upgrade rejections are read via ws unexpected-response (status, X-HookTunnel-Error header, JSON body)
+      - Codes MISSING_TOKEN, INVALID_TOKEN, TOKEN_REVOKED, TOKEN_EXPIRED, MISSING_SCOPE, AUTH_BACKEND_UNAVAILABLE, INTERNAL_ERROR each map to a specific message and suggestion
+      - Bare 401/403 from older servers are described as auth/permission rejections
+      - Only real network errors (ENOTFOUND, ECONNREFUSED, ETIMEDOUT, ...) suggest checking the internet connection
+      - 401/403 never trigger the reconnect loop; 503 retries with backoff
+      - API 403 INSUFFICIENT_SCOPE names the required scope
+    rationale: Hulupeep/hooktunnel#60 - every failure surfaced as "Unexpected server response 401, check your internet connection"
+
+  CLI-ERR-004:
+    level: SHOULD
+    description: Printed commands match how the CLI was invoked
+    enforcement:
+      - Under npx (npm_command=exec or a _npx install path) instructions show "npx hooktunnel-cli <command>"
+      - Otherwise they show "hooktunnel <command>"
+    rationale: npx users have no hooktunnel binary on PATH
+
 journeys:
   J-CLI-FIRST-USE:
     description: First-time user flow
     steps:
-      - Install with npx hooktunnel or npm i -g hooktunnel-cli
-      - Run hooktunnel login --key <api-key>
+      - Install with npx hooktunnel-cli or npm i -g hooktunnel-cli
+      - Run hooktunnel login --key <api-key> (or npx hooktunnel-cli login, which prompts for the key)
       - Run hooktunnel connect dev 3000
       - Webhooks forward to localhost:3000
 
@@ -169,3 +202,9 @@ changelog:
     version: "1.0.0"
     changes:
       - Initial CLI contract
+  - date: 2026-10-30
+    version: "1.1.0"
+    changes:
+      - Add CLI-AUTH-003 (whoami-based login, control-plane default URL, hidden prompt)
+      - Add CLI-ERR-003 (specific auth error mapping, no reconnect on 401/403)
+      - Add CLI-ERR-004 (npx-aware instructions)

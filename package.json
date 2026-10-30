@@ -1,7 +1,7 @@
 {
   "name": "hooktunnel-cli",
-  "version": "0.1.1",
-  "description": "HookTunnel CLI - Webhook infrastructure that never drops a request",
+  "version": "0.1.4",
+  "description": "Webhook infrastructure, not just a tunnel. Captures every request, replay to localhost or production.",
   "type": "module",
   "bin": {
     "hooktunnel": "./dist/index.js"
@@ -18,10 +18,22 @@
   },
   "keywords": [
     "webhook",
-    "tunnel",
-    "ngrok",
-    "development",
-    "debugging"
+    "webhook-history",
+    "webhook-replay",
+    "webhook-capture",
+    "semantic-search",
+    "find-similar",
+    "webhook-investigation",
+    "request-logging",
+    "stable-urls",
+    "localhost-forwarding",
+    "production-forwarding",
+    "stripe-webhooks",
+    "github-webhooks",
+    "shopify-webhooks",
+    "twilio-webhooks",
+    "webhook-debugging",
+    "api-testing"
   ],
   "author": "HookTunnel",
   "license": "MIT",

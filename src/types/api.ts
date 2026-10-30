@@ -50,3 +50,12 @@ export interface UserInfo {
   email: string;
   tier: string;
 }
+
+/** GET /api/keys/whoami (control plane) */
+export interface WhoamiResponse {
+  valid: true;
+  user_id: string;
+  key_id: string;
+  scopes: string[];
+  tier: string;
+}

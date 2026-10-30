@@ -180,6 +180,43 @@ describe('CLI Contract Tests', () => {
     expect(content).toMatch(/fetchLogs|getLogs/);
   });
 
+  // CLI-AUTH-003: whoami-based login against the control plane
+  test('CLI-AUTH-003: Login verifies via control-plane /api/keys/whoami', () => {
+    const api = readFileSync(join(ROOT, 'src/lib/api.ts'), 'utf-8');
+    expect(api).toMatch(/\/api\/keys\/whoami/);
+    expect(api).not.toMatch(/\/api\/keys\/validate/); // service-to-service only
+
+    const config = readFileSync(join(ROOT, 'src/lib/config.ts'), 'utf-8');
+    expect(config).toMatch(/DEFAULT_API_URL = 'https:\/\/app\.hooktunnel\.com'/);
+    expect(config).toMatch(/migrateConfig/);
+
+    const login = readFileSync(join(ROOT, 'src/commands/login.ts'), 'utf-8');
+    expect(login).toMatch(/promptHidden/);
+    expect(login).toMatch(/maskApiKey/);
+  });
+
+  // CLI-ERR-003: specific auth errors on tunnel upgrade
+  test('CLI-ERR-003: Tunnel reads upgrade rejections and does not retry auth failures', () => {
+    const tunnel = readFileSync(join(ROOT, 'src/lib/tunnel.ts'), 'utf-8');
+    expect(tunnel).toMatch(/'unexpected-response'/);
+    expect(tunnel).toMatch(/x-hooktunnel-error/i);
+    expect(tunnel).toMatch(/shouldRetry/);
+
+    const errors = readFileSync(join(ROOT, 'src/lib/serverErrors.ts'), 'utf-8');
+    for (const code of ['MISSING_TOKEN', 'INVALID_TOKEN', 'TOKEN_REVOKED', 'TOKEN_EXPIRED', 'MISSING_SCOPE', 'INSUFFICIENT_SCOPE', 'AUTH_BACKEND_UNAVAILABLE', 'INTERNAL_ERROR']) {
+      expect(errors).toContain(`'${code}'`);
+    }
+  });
+
+  // CLI-ERR-004: npx-aware instructions
+  test('CLI-ERR-004: Printed commands are npx-aware', () => {
+    const inv = readFileSync(join(ROOT, 'src/lib/invocation.ts'), 'utf-8');
+    expect(inv).toMatch(/isNpxInvocation/);
+    expect(inv).toMatch(/npx \$\{PACKAGE_NAME\}/);
+    const login = readFileSync(join(ROOT, 'src/commands/login.ts'), 'utf-8');
+    expect(login).toMatch(/cliCommand\(/);
+  });
+
   // Contract YAML exists
   test('CLI-CONTRACT: Contract YAML is defined', () => {
     const filePath = join(ROOT, 'docs/contracts/feature_cli.yml');
@@ -190,5 +227,7 @@ describe('CLI Contract Tests', () => {
     expect(content).toMatch(/CLI-AUTH-001/);
     expect(content).toMatch(/CLI-CONN-001/);
     expect(content).toMatch(/CLI-CMD-001/);
+    expect(content).toMatch(/CLI-AUTH-003/);
+    expect(content).toMatch(/CLI-ERR-003/);
   });
 });

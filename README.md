@@ -198,9 +198,15 @@ Authenticate with your API key.
 
 ```bash
 hooktunnel login --key ht_abc123...
+# or omit --key to paste it at a hidden prompt
+hooktunnel login
 ```
 
-Get your API key from [hooktunnel.com/app/settings](https://hooktunnel.com/app/settings)
+Get your API key from [hooktunnel.com/app/settings](https://hooktunnel.com/app/settings).
+The key is verified against the HookTunnel control plane (`GET /api/keys/whoami`) and the
+key's scopes are shown. If the server can't be reached, the key is still saved with a
+warning and will be checked when you connect. (Using npx? Prefix commands with
+`npx hooktunnel-cli` instead of `hooktunnel`.)
 
 ### `hooktunnel connect <env> <port>`
 
@@ -358,8 +364,13 @@ The URL never changes. No webhook is ever lost.
 ## Configuration
 
 Credentials stored in:
-- **Linux/macOS:** `~/.config/hooktunnel-cli/config.json`
-- **Windows:** `%APPDATA%/hooktunnel-cli/config.json`
+- **Linux:** `~/.config/hooktunnel-cli-nodejs/config.json`
+- **macOS:** `~/Library/Preferences/hooktunnel-cli-nodejs/config.json`
+- **Windows:** `%APPDATA%/hooktunnel-cli-nodejs/Config/config.json`
+
+`hooktunnel status` prints the exact path. Set `HOOKTUNNEL_CONFIG_DIR` to use a different directory.
+The API defaults to `https://app.hooktunnel.com`; configs still pointing at the old default
+(`https://api.hooktunnel.com`) are migrated automatically.
 
 ---
 
@@ -371,11 +382,24 @@ Credentials stored in:
 hooktunnel login --key <your-api-key>
 ```
 
-### "Connection failed"
+### "This API key was revoked" / "has expired" / "does not recognise this API key"
+
+The server rejected your key. Generate a new one at
+[hooktunnel.com/app/settings](https://hooktunnel.com/app/settings) and run `hooktunnel login` again.
+
+### "Your API key lacks the ... scope"
+
+The key is valid but missing a permission (e.g. `tunnel:connect` for `connect`, `hooks:read` for
+`hooks`). Create a key with that scope.
+
+### "HookTunnel's auth service is unavailable"
+
+Server-side problem; your key is probably fine. `connect` retries automatically.
+
+### "Could not reach HookTunnel"
 
 1. Check internet connection
-2. Verify API key: `hooktunnel status`
-3. Try verbose mode: `hooktunnel connect dev 3000 --verbose`
+2. Try verbose mode: `hooktunnel connect dev 3000 --verbose`
 
 ### 502 errors in terminal
 

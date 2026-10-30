@@ -7,6 +7,7 @@ import chalk from 'chalk';
 import ora from 'ora';
 import { isAuthenticated, getApiKey, getConfigPath } from '../lib/config.js';
 import { fetchHooks, getUserInfo } from '../lib/api.js';
+import { cliCommand, maskApiKey } from '../lib/invocation.js';
 
 export async function statusCommand(): Promise<void> {
   console.log(chalk.cyan('\n📊 HookTunnel Status\n'));
@@ -19,7 +20,7 @@ export async function statusCommand(): Promise<void> {
   );
 
   if (!isAuth) {
-    console.log(chalk.gray(`\n  Run "hooktunnel login" to authenticate\n`));
+    console.log(chalk.gray(`\n  Run "${cliCommand('login')}" to authenticate\n`));
     return;
   }
 
@@ -35,7 +36,7 @@ export async function statusCommand(): Promise<void> {
 
     // API key info
     const apiKey = getApiKey();
-    console.log(chalk.gray('  API Key: ') + chalk.white(`${apiKey?.slice(0, 8)}...`));
+    console.log(chalk.gray('  API Key: ') + chalk.white(`${maskApiKey(apiKey ?? '')}`));
     console.log(chalk.gray('  Config: ') + chalk.gray(getConfigPath()));
 
     console.log();
@@ -60,7 +61,7 @@ export async function statusCommand(): Promise<void> {
     }
 
     console.log();
-    console.log(chalk.gray('  To forward webhooks: hooktunnel connect dev <port>\n'));
+    console.log(chalk.gray(`  To forward webhooks: ${cliCommand('connect dev <port>')}\n`));
   } catch (error) {
     spinner.fail('Failed to fetch status');
 

@@ -8,9 +8,11 @@
 
 import WebSocket from 'ws';
 import chalk from 'chalk';
+import type { ClientRequest, IncomingMessage } from 'node:http';
 import { v4 as uuidv4 } from 'uuid';
 import { getTunnelUrl } from './config.js';
 import { CLIError } from './errors.js';
+import { errorFromConnectionError, errorFromServerCode, errorFromUpgradeRejection } from './serverErrors.js';
 import type {
   TunnelOptions,
   ConnectionState,
@@ -22,9 +24,87 @@ import type {
   RequestLogEntry,
 } from '../types/tunnel.js';
 
-const CLIENT_VERSION = '0.1.0';
+const CLIENT_VERSION = '0.1.4';
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 30000];
 // Default tunnel endpoint: wss://tunnel.hooktunnel.com/ws/tunnel
+const HANDSHAKE_TIMEOUT_MS = 15_000;
+const MAX_ERROR_BODY_BYTES = 16 * 1024;
+const ERROR_BODY_TIMEOUT_MS = 3_000;
+
+/**
+ * Whether a failed (re)connection is worth retrying. Auth and permission
+ * rejections (401/403) and other HTTP-level refusals are not; network errors,
+ * 5xx and unexplained socket closes are.
+ */
+export function shouldRetry(error: unknown): boolean {
+  if (!(error instanceof CLIError)) return true;
+  if (error.retryable) return true;
+  if (error.status !== undefined) return false;
+  return error.code === 'CONNECTION_FAILED' || error.code === 'CONNECTION_LOST';
+}
+
+/** Read (a bounded amount of) an HTTP response body; resolves on end, close, error or timeout. */
+function readResponseBody(res: IncomingMessage): Promise<string> {
+  return new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(Buffer.concat(chunks).toString('utf8'));
+    };
+    const timer = setTimeout(finish, ERROR_BODY_TIMEOUT_MS);
+    res.on('data', (chunk: Buffer) => {
+      if (size < MAX_ERROR_BODY_BYTES) {
+        chunks.push(chunk);
+        size += chunk.length;
+      }
+    });
+    res.on('end', finish);
+    res.on('close', finish);
+    res.on('error', finish);
+  });
+}
+
+interface ParsedTarget {
+  baseUrl: string;
+  displayUrl: string;
+}
+
+/**
+ * Parse the target host/URL for forwarding.
+ * Supports:
+ *   - localhost (default) → http://localhost:PORT
+ *   - custom-host → http://custom-host:PORT
+ *   - http://host:port → http://host:port (as-is)
+ *   - https://api.prod.com → https://api.prod.com (no port appended)
+ */
+function parseTarget(host: string | undefined, port: number): ParsedTarget {
+  // Default: localhost with port
+  if (!host) {
+    return {
+      baseUrl: `http://localhost:${port}`,
+      displayUrl: `http://localhost:${port}`,
+    };
+  }
+
+  // Full URL provided (http:// or https://)
+  if (host.startsWith('http://') || host.startsWith('https://')) {
+    // Don't append port to full URLs - they manage their own ports
+    return {
+      baseUrl: host.replace(/\/$/, ''), // Remove trailing slash
+      displayUrl: host.replace(/\/$/, ''),
+    };
+  }
+
+  // Plain hostname - treat as local, add http:// and port
+  return {
+    baseUrl: `http://${host}:${port}`,
+    displayUrl: `http://${host}:${port}`,
+  };
+}
 
 export class TunnelClient {
   private ws: WebSocket | null = null;
@@ -34,63 +114,131 @@ export class TunnelClient {
   private reconnectAttempt = 0;
   private clientInstanceId: string;
   private requestLog: RequestLogEntry[] = [];
+  private target: ParsedTarget;
+  private closedByClient = false;
 
   constructor(options: TunnelOptions) {
     this.options = options;
     this.clientInstanceId = uuidv4();
+    this.target = parseTarget(options.host, options.port);
   }
 
+  /**
+   * Single connection attempt. Rejects with a CLIError describing why the
+   * server refused the upgrade (auth code, status) or why it was unreachable.
+   */
   async connect(): Promise<void> {
     return new Promise((resolve, reject) => {
       this.state = 'connecting';
-      const tunnelUrl = getTunnelUrl();
+      const tunnelUrl = this.options.tunnelUrl ?? getTunnelUrl();
+      let settled = false;
+
+      const succeed = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      const fail = (error: CLIError) => {
+        if (settled) return;
+        settled = true;
+        if (this.state === 'connecting') this.state = 'disconnected';
+        reject(error);
+      };
 
       if (this.options.verbose) {
         console.log(chalk.gray(`[DEBUG] Connecting to ${tunnelUrl}`));
       }
 
-      this.ws = new WebSocket(tunnelUrl, {
+      const ws = new WebSocket(tunnelUrl, {
         headers: {
           'Authorization': `Bearer ${this.options.apiKey}`,
         },
+        handshakeTimeout: HANDSHAKE_TIMEOUT_MS,
+      });
+      this.ws = ws;
+
+      // Non-101 upgrade response: read status, X-HookTunnel-Error header and JSON body
+      ws.on('unexpected-response', (_req: ClientRequest, res: IncomingMessage) => {
+        const header = res.headers['x-hooktunnel-error'];
+        readResponseBody(res).then((body) => {
+          if (this.options.verbose) {
+            console.log(chalk.gray(`[DEBUG] Upgrade rejected: HTTP ${res.statusCode} ${header ?? ''} ${body}`));
+          }
+          fail(
+            errorFromUpgradeRejection({
+              status: res.statusCode ?? 0,
+              headerCode: Array.isArray(header) ? header[0] : header,
+              body,
+              url: tunnelUrl,
+            })
+          );
+          ws.terminate();
+        });
       });
 
-      this.ws.on('open', () => {
+      ws.on('open', () => {
         if (this.options.verbose) {
           console.log(chalk.gray('[DEBUG] WebSocket connected, sending hello'));
         }
         this.sendHello();
       });
 
-      this.ws.on('message', (data: Buffer) => {
+      ws.on('message', (data: Buffer) => {
         try {
           const message = JSON.parse(data.toString()) as ServerMessage;
-          this.handleMessage(message, resolve, reject);
+          this.handleMessage(message, succeed, fail);
         } catch (error) {
           console.error(chalk.red('Failed to parse message'));
         }
       });
 
-      this.ws.on('close', (code: number, reason: Buffer) => {
+      ws.on('close', (code: number, reason: Buffer) => {
         const wasConnected = this.state === 'connected';
         this.state = 'disconnected';
 
-        if (wasConnected) {
+        if (wasConnected && !this.closedByClient) {
           console.log(chalk.yellow(`\nConnection closed (${code}): ${reason.toString()}`));
           this.attemptReconnect();
         } else {
-          reject(new CLIError('CONNECTION_FAILED', `Code: ${code}`));
+          fail(new CLIError('CONNECTION_FAILED', `Connection closed before the tunnel was established (code ${code})`));
         }
       });
 
-      this.ws.on('error', (error: Error) => {
-        if (this.state === 'connecting') {
-          reject(new CLIError('CONNECTION_FAILED', error.message));
-        } else {
+      ws.on('error', (error: Error) => {
+        if (!settled) {
+          fail(errorFromConnectionError(error, tunnelUrl));
+        } else if (this.state === 'connected') {
           console.error(chalk.red(`Connection error: ${error.message}`));
         }
       });
     });
+  }
+
+  /**
+   * Initial connection. Retries with backoff only when the server says it is
+   * temporarily unavailable (503, e.g. AUTH_BACKEND_UNAVAILABLE). Auth
+   * failures and network errors are reported immediately.
+   */
+  async connectWithRetry(): Promise<void> {
+    const delays = this.options.retryDelaysMs ?? RECONNECT_DELAYS;
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await this.connect();
+        return;
+      } catch (error) {
+        const temporarilyUnavailable = error instanceof CLIError && error.status === 503;
+        if (!temporarilyUnavailable || attempt >= delays.length) {
+          throw error;
+        }
+        const delay = delays[attempt];
+        console.log(
+          chalk.yellow(
+            `${(error as CLIError).info.message}. Retrying in ${delay / 1000}s... (attempt ${attempt + 1}/${delays.length})`
+          )
+        );
+        await new Promise((r) => setTimeout(r, delay));
+      }
+    }
   }
 
   private sendHello(): void {
@@ -98,7 +246,7 @@ export class TunnelClient {
       type: 'hello',
       client_instance_id: this.clientInstanceId,
       env: this.options.env,
-      local_base_url: `http://${this.options.host || 'localhost'}:${this.options.port}`,
+      local_base_url: this.target.baseUrl,
       capabilities: {
         max_inflight: 50,
         max_body_bytes: 10 * 1024 * 1024, // 10MB
@@ -113,7 +261,7 @@ export class TunnelClient {
   private handleMessage(
     message: ServerMessage,
     resolveConnect?: () => void,
-    rejectConnect?: (err: Error) => void
+    rejectConnect?: (err: CLIError) => void
   ): void {
     switch (message.type) {
       case 'hello_ack':
@@ -128,7 +276,7 @@ export class TunnelClient {
 
         console.log(chalk.green('✓ Connected to HookTunnel'));
         console.log(chalk.gray(`  Session: ${this.sessionId?.slice(0, 8)}...`));
-        console.log(chalk.gray(`  Forwarding to: http://${this.options.host || 'localhost'}:${this.options.port}`));
+        console.log(chalk.gray(`  Forwarding to: ${this.target.displayUrl}`));
         console.log();
 
         resolveConnect?.();
@@ -142,12 +290,17 @@ export class TunnelClient {
         this.sendPong(message.timestamp);
         break;
 
-      case 'error':
-        console.error(chalk.red(`Server error: ${message.message}`));
-        if (message.code === 'AUTH_FAILED') {
-          rejectConnect?.(new CLIError('AUTH_INVALID'));
+      case 'error': {
+        const mapped =
+          errorFromServerCode(message.code, { serverMessage: message.message, context: 'tunnel' }) ??
+          (message.code === 'AUTH_FAILED' ? new CLIError('AUTH_INVALID', message.message) : undefined);
+        if (mapped && this.state === 'connecting') {
+          rejectConnect?.(mapped);
+        } else {
+          console.error(chalk.red(`Server error: ${message.message}`));
         }
         break;
+      }
     }
   }
 
@@ -159,14 +312,14 @@ export class TunnelClient {
     }
 
     try {
-      // Forward to local server
-      const localUrl = `http://${this.options.host || 'localhost'}:${this.options.port}${request.path}${request.query ? '?' + request.query : ''}`;
+      // Forward to target server (local or remote)
+      const targetUrl = `${this.target.baseUrl}${request.path}${request.query ? '?' + request.query : ''}`;
 
       const headers: Record<string, string> = { ...request.headers };
       delete headers['host'];
       delete headers['connection'];
 
-      const response = await fetch(localUrl, {
+      const response = await fetch(targetUrl, {
         method: request.method,
         headers,
         body: request.body_base64 ? Buffer.from(request.body_base64, 'base64') : undefined,
@@ -272,13 +425,24 @@ export class TunnelClient {
 
     setTimeout(() => {
       this.connect().catch((error) => {
-        console.error(chalk.red(`Reconnection failed: ${error.message}`));
+        if (!shouldRetry(error)) {
+          // Auth/permission problems will not fix themselves by reconnecting
+          if (error instanceof CLIError) {
+            error.display();
+          } else {
+            console.error(chalk.red(`Reconnection failed: ${error.message}`));
+          }
+          process.exit(1);
+        }
+        const detail = error instanceof CLIError && error.details ? ` (${error.details})` : '';
+        console.error(chalk.red(`Reconnection failed: ${error.message}${detail}`));
         this.attemptReconnect();
       });
     }, delay);
   }
 
   disconnect(): void {
+    this.closedByClient = true;
     if (this.ws) {
       this.ws.close(1000, 'Client disconnecting');
       this.ws = null;

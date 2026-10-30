@@ -8,6 +8,7 @@ import ora from 'ora';
 import { isAuthenticated } from '../lib/config.js';
 import { fetchHooks } from '../lib/api.js';
 import { CLIError } from '../lib/errors.js';
+import { cliCommand } from '../lib/invocation.js';
 
 export async function hooksCommand(): Promise<void> {
   if (!isAuthenticated()) {
@@ -56,7 +57,7 @@ export async function hooksCommand(): Promise<void> {
 
     console.log();
     console.log(chalk.gray('  Webhook URL: https://hooks.hooktunnel.com/h/<hook_id>'));
-    console.log(chalk.gray('  To forward: hooktunnel connect dev <port>\n'));
+    console.log(chalk.gray(`  To forward: ${cliCommand('connect dev <port>')}\n`));
   } catch (error) {
     spinner.fail('Failed to fetch hooks');
     throw error;
