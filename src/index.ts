@@ -19,8 +19,8 @@ const program = new Command();
 
 program
   .name('hooktunnel')
-  .description('Webhook infrastructure - stable URLs, full history, instant replay')
-  .version('0.1.1');
+  .description('Webhook infrastructure, not just a tunnel. Captures every request, replay anywhere.')
+  .version('0.1.3');
 
 // Login command
 program
@@ -50,9 +50,9 @@ program
 // Connect command
 program
   .command('connect <env> <port>')
-  .description('Forward live webhooks to your local server')
+  .description('Forward live webhooks to localhost or any target server')
   .option('-v, --verbose', 'Show verbose output')
-  .option('-h, --host <host>', 'Local host to forward to (default: localhost)')
+  .option('-h, --host <host>', 'Target host or full URL (e.g., https://api.staging.com)')
   .action(async (env, port, options) => {
     try {
       await connectCommand(env, port, options);
@@ -114,15 +114,26 @@ program
 // Default action - show help
 program.action(() => {
   console.log(chalk.cyan(`
-  🔗 HookTunnel CLI
+  HookTunnel CLI
 
-  Webhook infrastructure that never drops a request.
-  Stable URLs, full history, instant replay.
+  Webhook infrastructure, not just a tunnel.
+
+  ngrok loses webhooks when you're offline. HookTunnel captures every request
+  24/7, stores full history, and lets you replay to localhost OR production.
 
   Get started:
     hooktunnel login --key <your-api-key>
     hooktunnel hooks
     hooktunnel connect dev 3000
+
+  Why HookTunnel?
+    - Never lose a webhook: Captured even when you're offline
+    - Replay anywhere: Send stored webhooks to localhost, staging, or prod
+    - Fix & reprocess: Bug caused a failure? Fix it, replay to prod, done
+    - Stable URLs: No more updating configs when URLs rotate
+    - Semantic search: Find webhooks by payload content
+    - Investigations: Link related requests for debugging
+    - Full history: Up to 1 year retention (by plan)
   `));
   program.help();
 });

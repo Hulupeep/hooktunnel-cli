@@ -42,9 +42,10 @@ export async function connectCommand(
 
   console.log(chalk.cyan('\n🔗 HookTunnel'));
   console.log(chalk.gray(`  Environment: ${env}`));
-  console.log(chalk.gray(`  Local port: ${portNum}`));
-  if (options.host) {
-    console.log(chalk.gray(`  Local host: ${options.host}`));
+  if (options.host?.startsWith('http')) {
+    console.log(chalk.gray(`  Target: ${options.host}`));
+  } else {
+    console.log(chalk.gray(`  Target: ${options.host || 'localhost'}:${portNum}`));
   }
   console.log();
 

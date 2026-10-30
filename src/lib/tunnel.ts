@@ -22,9 +22,47 @@ import type {
   RequestLogEntry,
 } from '../types/tunnel.js';
 
-const CLIENT_VERSION = '0.1.0';
+const CLIENT_VERSION = '0.1.3';
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 30000];
 // Default tunnel endpoint: wss://tunnel.hooktunnel.com/ws/tunnel
+
+interface ParsedTarget {
+  baseUrl: string;
+  displayUrl: string;
+}
+
+/**
+ * Parse the target host/URL for forwarding.
+ * Supports:
+ *   - localhost (default) → http://localhost:PORT
+ *   - custom-host → http://custom-host:PORT
+ *   - http://host:port → http://host:port (as-is)
+ *   - https://api.prod.com → https://api.prod.com (no port appended)
+ */
+function parseTarget(host: string | undefined, port: number): ParsedTarget {
+  // Default: localhost with port
+  if (!host) {
+    return {
+      baseUrl: `http://localhost:${port}`,
+      displayUrl: `http://localhost:${port}`,
+    };
+  }
+
+  // Full URL provided (http:// or https://)
+  if (host.startsWith('http://') || host.startsWith('https://')) {
+    // Don't append port to full URLs - they manage their own ports
+    return {
+      baseUrl: host.replace(/\/$/, ''), // Remove trailing slash
+      displayUrl: host.replace(/\/$/, ''),
+    };
+  }
+
+  // Plain hostname - treat as local, add http:// and port
+  return {
+    baseUrl: `http://${host}:${port}`,
+    displayUrl: `http://${host}:${port}`,
+  };
+}
 
 export class TunnelClient {
   private ws: WebSocket | null = null;
@@ -34,10 +72,12 @@ export class TunnelClient {
   private reconnectAttempt = 0;
   private clientInstanceId: string;
   private requestLog: RequestLogEntry[] = [];
+  private target: ParsedTarget;
 
   constructor(options: TunnelOptions) {
     this.options = options;
     this.clientInstanceId = uuidv4();
+    this.target = parseTarget(options.host, options.port);
   }
 
   async connect(): Promise<void> {
@@ -98,7 +138,7 @@ export class TunnelClient {
       type: 'hello',
       client_instance_id: this.clientInstanceId,
       env: this.options.env,
-      local_base_url: `http://${this.options.host || 'localhost'}:${this.options.port}`,
+      local_base_url: this.target.baseUrl,
       capabilities: {
         max_inflight: 50,
         max_body_bytes: 10 * 1024 * 1024, // 10MB
@@ -128,7 +168,7 @@ export class TunnelClient {
 
         console.log(chalk.green('✓ Connected to HookTunnel'));
         console.log(chalk.gray(`  Session: ${this.sessionId?.slice(0, 8)}...`));
-        console.log(chalk.gray(`  Forwarding to: http://${this.options.host || 'localhost'}:${this.options.port}`));
+        console.log(chalk.gray(`  Forwarding to: ${this.target.displayUrl}`));
         console.log();
 
         resolveConnect?.();
@@ -159,14 +199,14 @@ export class TunnelClient {
     }
 
     try {
-      // Forward to local server
-      const localUrl = `http://${this.options.host || 'localhost'}:${this.options.port}${request.path}${request.query ? '?' + request.query : ''}`;
+      // Forward to target server (local or remote)
+      const targetUrl = `${this.target.baseUrl}${request.path}${request.query ? '?' + request.query : ''}`;
 
       const headers: Record<string, string> = { ...request.headers };
       delete headers['host'];
       delete headers['connection'];
 
-      const response = await fetch(localUrl, {
+      const response = await fetch(targetUrl, {
         method: request.method,
         headers,
         body: request.body_base64 ? Buffer.from(request.body_base64, 'base64') : undefined,
